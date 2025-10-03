@@ -1,23 +1,12 @@
 //TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
 // click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
-
-import JDBC.DBConnection;
-import java.sql.ResultSet;
-import java.sql.Statement;
+import ConsoleUI.UserMenu;
 
 public class Main {
+    private static final UserMenu menu = new UserMenu();
     public static void main(String[] args) {
-        try {
-            DBConnection db = DBConnection.getInstance();
-            Statement stmt = db.createStatement();
-            ResultSet rs = stmt.executeQuery("DESCRIBE card");
 
-            while (rs.next()) {
-                System.out.println(rs.getString(1) + " " + rs.getString(2));
-            }
+        menu.start();
 
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
     }
 }
