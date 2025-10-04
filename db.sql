@@ -1,2 +1,2 @@
 --@block
-show tables
+SELECT * FROM card

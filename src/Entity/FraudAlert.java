@@ -5,9 +5,9 @@ import Entity.enums.FraudLevel;
 import java.util.UUID;
 
 public record FraudAlert(
-        UUID id,
-        UUID cardId,
-        String description,
-        FraudLevel level
-) {
+                UUID id,
+                UUID cardId,
+                String description,
+                FraudLevel level,
+                String cardNumber) {
 }

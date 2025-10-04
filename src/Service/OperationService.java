@@ -2,7 +2,9 @@ package Service;
 
 import Entity.*;
 import Entity.enums.OperationType;
+import Entity.enums.FraudLevel;
 import DAO.OperationDAO;
+import DAO.AlertDAO;
 import JDBC.DBConnection;
 import java.sql.*;
 import java.time.LocalDateTime;
@@ -12,6 +14,7 @@ import java.util.UUID;
 public class OperationService {
     private Scanner scanner = new Scanner(System.in);
     private OperationDAO operationDAO = new OperationDAO();
+    private AlertDAO alertDAO = new AlertDAO();
 
     public void performOperation() {
         System.out.println("\n=== PERFORM OPERATION ===");
@@ -63,8 +66,8 @@ public class OperationService {
             operationLocation = "Unknown";
         }
 
-        boolean operationSuccess = processOperation(userCard, operationType, operationAmount);
-        if (operationSuccess) {
+        String failureReason = processOperation(userCard, operationType, operationAmount);
+        if (failureReason == null) {
             CardOperation newOperation = new CardOperation(
                     UUID.randomUUID(),
                     userCard.getId(),
@@ -76,11 +79,84 @@ public class OperationService {
             operationDAO.insertOperation(newOperation);
             updateCardBalanceAfterOperation(userCard, operationAmount);
             System.out.println("Operation successful: " + operationType + " - $" + operationAmount);
+        } else {
+            // Register fraud alert for failed operation
+            FraudAlert fraudAlert = new FraudAlert(
+                    UUID.randomUUID(),
+                    userCard.getId(),
+                    "Failed " + operationType + " operation: $" + operationAmount + " - " + failureReason,
+                    FraudLevel.WARNING,
+                    userCard.getCardNumber());
+            alertDAO.insertFraudAlert(fraudAlert);
+            System.out.println("Operation failed: " + failureReason);
         }
     }
 
-    public void getCardOperations(){
+    public void getCardOperations() {
+        System.out.println("\n=== VIEW CARD HISTORY ===");
 
+        System.out.print("Enter card number: ");
+        String cardNumber = scanner.nextLine().trim();
+
+        Card userCard = findCard(cardNumber);
+        if (userCard == null) {
+            System.out.println("Card not found.");
+            return;
+        }
+
+        String historyQuery = "SELECT operationDate, operationType, amount, location FROM cardoperation WHERE cardId = ? ORDER BY operationDate DESC";
+        PreparedStatement historyStatement = null;
+        ResultSet historyResult = null;
+
+        try {
+            historyStatement = DBConnection.getInstance().getConnection().prepareStatement(historyQuery);
+            historyStatement.setString(1, userCard.getId().toString());
+            historyResult = historyStatement.executeQuery();
+
+            boolean hasOperations = false;
+            int operationCount = 0;
+
+            // First, collect all operations
+            java.util.List<String> operations = new java.util.ArrayList<>();
+            while (historyResult.next()) {
+                hasOperations = true;
+                operationCount++;
+
+                String date = historyResult.getTimestamp("operationDate").toString().substring(0, 16);
+                String type = historyResult.getString("operationType");
+                double amount = historyResult.getDouble("amount");
+                String location = historyResult.getString("location");
+
+                operations.add(operationCount + ". " + type + " - $" + amount + "\n" +
+                        "   Date: " + date + "\n" +
+                        "   Location: " + location);
+            }
+
+            if (!hasOperations) {
+                System.out.println("No operations found for this card.");
+            } else {
+                System.out.println("\nCard: " + cardNumber);
+                System.out.println("Operations Found: " + operationCount);
+
+                for (String operation : operations) {
+                    System.out.println("\n" + operation);
+                }
+            }
+
+        } catch (SQLException databaseError) {
+            System.out.println("Error retrieving card history: " + databaseError.getMessage());
+        } finally {
+            try {
+                if (historyResult != null) {
+                    historyResult.close();
+                }
+                if (historyStatement != null) {
+                    historyStatement.close();
+                }
+            } catch (SQLException closeError) {
+                // Ignore close errors
+            }
+        }
     }
 
     private Card findCard(String cardNumber) {
@@ -157,7 +233,7 @@ public class OperationService {
         return prepaidCard;
     }
 
-    private boolean processOperation(Card userCard, OperationType operationType, double operationAmount) {
+    private String processOperation(Card userCard, OperationType operationType, double operationAmount) {
         if (userCard instanceof DebitCard) {
             DebitCard debitCard = (DebitCard) userCard;
             return processDebitOperation(debitCard, operationType, operationAmount);
@@ -168,48 +244,44 @@ public class OperationService {
             PrepaidCard prepaidCard = (PrepaidCard) userCard;
             return processPrepaidOperation(prepaidCard, operationType, operationAmount);
         }
-        return false;
+        return "Unknown card type";
     }
 
-    private boolean processDebitOperation(DebitCard debitCard, OperationType operationType, double operationAmount) {
+    private String processDebitOperation(DebitCard debitCard, OperationType operationType, double operationAmount) {
         double currentBalance = getCurrentBalance(debitCard.getId());
 
         if (operationAmount > debitCard.getDailyLimit()) {
-            System.out.println("Amount exceeds daily limit of $" + debitCard.getDailyLimit());
-            return false;
+            return "Amount exceeds daily limit of $" + debitCard.getDailyLimit();
         }
 
         if (operationAmount > currentBalance) {
-            System.out.println("Insufficient balance. Current balance: $" + currentBalance);
-            return false;
+            return "Insufficient balance. Current balance: $" + currentBalance;
         }
 
-        return true;
+        return null;
     }
 
-    private boolean processCreditOperation(CreditCard creditCard, OperationType operationType, double operationAmount) {
+    private String processCreditOperation(CreditCard creditCard, OperationType operationType, double operationAmount) {
         double currentBalance = getCurrentBalance(creditCard.getId());
         double availableCredit = creditCard.getMonthlyLimit() + currentBalance;
 
         if (operationAmount > availableCredit) {
-            System.out.println("Amount exceeds available credit of $" + availableCredit);
-            return false;
+            return "Amount exceeds available credit of $" + availableCredit;
         }
 
-        return true;
+        return null;
     }
 
-    private boolean processPrepaidOperation(PrepaidCard prepaidCard, OperationType operationType,
+    private String processPrepaidOperation(PrepaidCard prepaidCard, OperationType operationType,
             double operationAmount) {
         double currentBalance = prepaidCard.getBalance();
 
         if (operationAmount > currentBalance) {
-            System.out.println("Insufficient balance. Current balance: $" + currentBalance);
-            return false;
+            return "Insufficient balance. Current balance: $" + currentBalance;
         }
 
         prepaidCard.setBalance(currentBalance - operationAmount);
-        return true;
+        return null;
     }
 
     private double getCurrentBalance(UUID cardId) {

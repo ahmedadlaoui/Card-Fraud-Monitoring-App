@@ -4,18 +4,21 @@ import java.util.Scanner;
 import Service.ClientService;
 import Service.CardService;
 import Service.OperationService;
+import Service.FraudService;
 
 public class UserMenu {
 
     private ClientService clientService;
     private CardService cardService;
     private OperationService operationService;
+    private FraudService fraudService;
     private Scanner scanner;
 
     public UserMenu() {
         this.clientService = new ClientService();
         this.cardService = new CardService();
         this.operationService = new OperationService();
+        this.fraudService = new FraudService();
         this.scanner = new Scanner(System.in);
     }
 
@@ -52,7 +55,7 @@ public class UserMenu {
                     this.operationService.getCardOperations();
                     break;
                 case 5:
-
+                    this.fraudService.displayFraudAnalysis();
                     break;
                 case 6:
 
